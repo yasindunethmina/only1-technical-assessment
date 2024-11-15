@@ -48,7 +48,7 @@ const AppRoutes = () => {
           session ? (
             <Navigate to="/dashboard" replace />
           ) : (
-            <Navigate to="/signup" replace />
+            <Navigate to="/login" replace />
           )
         }
       />
