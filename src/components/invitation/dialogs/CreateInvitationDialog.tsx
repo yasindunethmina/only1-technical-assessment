@@ -11,8 +11,8 @@ import {
   InvitationStatus,
 } from '../../../types/invitation';
 import {
-  useFetchInvitations,
   useCreateInvitation,
+  useFetchAllInvitations,
 } from '../../../hooks/useInvitations';
 import { shortenEmail } from '../../../utils/shortenEmail';
 import { useFetchUsers } from '../../../hooks/useUsers';
@@ -25,7 +25,7 @@ type CreateInvitationDialogProps = {
 const CreateInvitationDialog = ({ owner }: CreateInvitationDialogProps) => {
   const [isOpen, setIsOpen] = useState(false);
 
-  const { invitations } = useFetchInvitations({ owner, limit: 10 });
+  const { data: allInvitations = [] } = useFetchAllInvitations({ owner });
   const { data: users = [], isLoading: isLoadingUsers } = useFetchUsers();
   const { mutateAsync: createInvitation, isPending: isSubmitting } =
     useCreateInvitation();
@@ -51,24 +51,15 @@ const CreateInvitationDialog = ({ owner }: CreateInvitationDialogProps) => {
       },
     });
 
-  // Filter the user reviewer (we only let users send new invitations if they don't have any pending or accepted invitations.
-  // Users can only receive new invitations after rejecting or completing the current one to avoid duplicate active invitations
   const availableUsers = useMemo(
     () =>
       users.filter(({ email }: { email: string }) => {
-        const excludeList = [
-          owner,
-          ...invitations
-            .filter(
-              (inv) =>
-                inv.status === InvitationStatus.PENDING ||
-                inv.status === InvitationStatus.ACCEPTED
-            )
-            .map(({ reviewer }) => reviewer),
-        ];
-        return !excludeList.includes(email);
+        const existingReviewers = allInvitations.map(
+          ({ reviewer }) => reviewer
+        );
+        return !existingReviewers.includes(email) && email !== owner;
       }),
-    [users, owner, invitations]
+    [users, owner, allInvitations]
   );
 
   // Watch write permissions to handle read permissions automatically
