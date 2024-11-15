@@ -51,13 +51,20 @@ const CreateInvitationDialog = ({ owner }: CreateInvitationDialogProps) => {
       },
     });
 
-  // Filter the user reviewer
+  // Filter the user reviewer (we only let users send new invitations if they don't have any pending or accepted invitations.
+  // Users can only receive new invitations after rejecting or completing the current one to avoid duplicate active invitations
   const availableUsers = useMemo(
     () =>
       users.filter(({ email }: { email: string }) => {
         const excludeList = [
           owner,
-          ...invitations.map(({ reviewer }) => reviewer),
+          ...invitations
+            .filter(
+              (inv) =>
+                inv.status === InvitationStatus.PENDING ||
+                inv.status === InvitationStatus.ACCEPTED
+            )
+            .map(({ reviewer }) => reviewer),
         ];
         return !excludeList.includes(email);
       }),

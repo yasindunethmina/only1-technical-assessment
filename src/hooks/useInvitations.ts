@@ -12,6 +12,7 @@ import {
   InvitationPayloadT,
   InvitationResponseT,
   UpdateInvitationPayloadT,
+  InvitationStatus,
 } from '../types/invitation';
 import {
   createEntityTimestamps,
@@ -31,34 +32,39 @@ export const useFetchInvitations = (params: {
     queryFn: async ({ pageParam = 1 }) => {
       // Simulate loading delay for demo purposes
       await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      const { limit = 5, ...restParams } = params;
+      const { limit = 10, ...restParams } = params;
       const start = (pageParam - 1) * limit;
 
-      // Get total count
-      const countResponse = await apiClient.get<InvitationT[]>('/invitations');
-      const totalInvitations = countResponse.data.filter((invitation) =>
-        Object.entries(restParams).every(
-          ([key, value]) => invitation[key as keyof InvitationT] === value
+      // Get all invitations first for accurate filtering and sorting
+      const allResponse = await apiClient.get<InvitationT[]>('/invitations');
+
+      const filteredInvitations = allResponse.data
+        .filter((invitation) =>
+          Object.entries(restParams).every(
+            ([key, value]) => invitation[key as keyof InvitationT] === value
+          )
         )
-      ).length;
 
-      // Get paginated data
-      const queryString = buildQueryString({
-        ...createBaseQueryParams(restParams),
-        _start: start,
-        _limit: limit,
-        _sort: 'createdAt',
-        _order: 'desc',
-      });
+        // NOTE: For large datasets, this in-memory sorting of all items could be inefficient.
+        // A more optimized approach would be to:
+        // 1. Let the backend handle sorting and pagination
+        // 2. Only sort the new chunks as they arrive from infiniteQuery
+        // 3. Implement cursor-based pagination with createdAt as the cursor
+        // However, for our simple local db.json case, this approach is sufficient :)
+        .sort(
+          (a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
 
-      const response = await apiClient.get<InvitationT[]>(
-        `/invitations?${queryString}`
+      const totalInvitations = filteredInvitations.length;
+      const paginatedInvitations = filteredInvitations.slice(
+        start,
+        start + limit
       );
-      const hasMore = start + response.data.length < totalInvitations;
+      const hasMore = start + paginatedInvitations.length < totalInvitations;
 
       return {
-        invitations: response.data,
+        invitations: paginatedInvitations,
         total: totalInvitations,
         hasMore,
         nextPage: hasMore ? pageParam + 1 : null,
@@ -88,10 +94,28 @@ export const useCreateInvitation = () => {
 
   return useMutation({
     mutationFn: async (payload: InvitationPayloadT) => {
+      // Check for existing active invitations
+      const existingResponse =
+        await apiClient.get<InvitationT[]>('/invitations');
+      const hasActiveInvitation = existingResponse.data.some(
+        (invitation) =>
+          invitation.owner === payload.owner &&
+          invitation.reviewer === payload.reviewer &&
+          (invitation.status === InvitationStatus.PENDING ||
+            invitation.status === InvitationStatus.ACCEPTED)
+      );
+
+      if (hasActiveInvitation) {
+        throw new Error(
+          'Cannot create new invitation: Active invitation already exists'
+        );
+      }
+
       const invitation = {
         ...payload,
         ...createEntityTimestamps(),
       };
+
       const response = await apiClient.post<InvitationT>(
         '/invitations',
         invitation
@@ -102,8 +126,10 @@ export const useCreateInvitation = () => {
       queryClient.invalidateQueries({ queryKey: INVITATIONS_QUERY_KEY });
       toast.success('Invitation created successfully');
     },
-    onError: () => {
-      toast.error('Failed to create invitation');
+    onError: (error) => {
+      toast.error(
+        error instanceof Error ? error.message : 'Failed to create invitation'
+      );
     },
   });
 };
@@ -126,6 +152,11 @@ export const useUpdateInvitation = () => {
         ...data,
         ...createEntityTimestamps(true),
       };
+
+      // Ensure read permissions are true when write permissions are true
+      if (updatedInvitation.writePost) updatedInvitation.readPost = true;
+      if (updatedInvitation.writeMessage) updatedInvitation.readMessage = true;
+      if (updatedInvitation.writeProfile) updatedInvitation.readProfile = true;
 
       const response = await apiClient.put<InvitationT>(
         `/invitations/${id}`,

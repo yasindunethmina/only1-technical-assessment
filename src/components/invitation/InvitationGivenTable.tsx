@@ -34,7 +34,7 @@ const InvitationGivenTable = ({ email }: InvitationGivenTableProps) => {
     total,
   } = useFetchInvitations({
     owner: email,
-    limit: 5,
+    limit: 10,
   });
 
   const [invitationToDelete, setInvitationToDelete] =
@@ -87,7 +87,7 @@ const InvitationGivenTable = ({ email }: InvitationGivenTableProps) => {
 
   return (
     <div className="space-y-4">
-      <div className="overflow-auto min-h-20 max-h-[60vh]">
+      <div className="overflow-auto min-h-20 max-h-[400px]">
         <Table
           aria-label="Invitations given"
           className="w-full min-w-[800px] table-fixed"
